@@ -1,12 +1,19 @@
 import os
+from security_utils import validate_path
 
 def read_file(file_path: str) -> str:
     """
     Reads the content of a local text file.
     Limits read buffer size to 5000 characters to prevent context length exhaustion.
+    Validates path to prevent directory traversal.
     """
-    normalized_path = os.path.abspath(file_path)
-    
+    try:
+        normalized_path = validate_path(file_path)
+    except PermissionError as pe:
+        return str(pe)
+    except Exception as e:
+        return f"Error resolving path: {e}"
+        
     if not os.path.exists(normalized_path):
         return f"Error: File does not exist at path: '{file_path}'"
         
@@ -26,8 +33,15 @@ def read_file(file_path: str) -> str:
 def create_file(file_path: str, content: str) -> str:
     """
     Writes content to a new text file or overwrites an existing one.
+    Validates path to prevent directory traversal.
     """
-    normalized_path = os.path.abspath(file_path)
+    try:
+        normalized_path = validate_path(file_path)
+    except PermissionError as pe:
+        return str(pe)
+    except Exception as e:
+        return f"Error resolving path: {e}"
+        
     parent_dir = os.path.dirname(normalized_path)
     
     try:

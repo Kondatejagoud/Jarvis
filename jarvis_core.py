@@ -347,20 +347,29 @@ class JarvisCore:
                     
                     self.event_bus.publish("TOOL_STARTED", {"tool_name": tool_name, "args": tool_args})
                     
-                    # Risk evaluation confirmation checks
-                    is_destructive = False
+                    # Determine permission level
+                    perm_level = self.config_manager.get("TOOL_PERMISSIONS", {}).get(tool_name, "safe")
+                    
+                    # Contextual promotion to dangerous for file overwriting
                     if tool_name == "create_file":
                         if isinstance(tool_args, str):
-                            args = json.loads(tool_args)
+                            try:
+                                args = json.loads(tool_args)
+                            except:
+                                args = {}
                         else:
                             args = tool_args
                         file_path = args.get("file_path", "")
                         if file_path and os.path.exists(file_path):
-                            is_destructive = True
+                            perm_level = "dangerous"  # Overwriting is dangerous!
                             
-                    if is_destructive:
-                        warn_text = "This action will overwrite or modify an existing resource. Do you want to proceed?"
-                        print(f"\033[1;31m[Destructive Action Warning: '{tool_name}' wants to overwrite/modify an existing resource!]\033[0m")
+                    if perm_level == "safe":
+                        result = tool_router.execute_tool(tool_name, tool_args)
+                        self._log_audit(command_text, score, tool_name, tool_args, result)
+                        
+                    elif perm_level == "moderate":
+                        warn_text = f"Tool '{tool_name}' requires authorization. Do you want to proceed?"
+                        print(f"\033[1;33m[Authorization Check: '{tool_name}' needs confirmation]\033[0m")
                         print(f"\033[1;35mJarvis: {warn_text} (Say Yes or No)\033[0m")
                         self.set_status("speaking")
                         self.speak_and_release(warn_text)
@@ -369,16 +378,41 @@ class JarvisCore:
                         stream = self.create_stream()
                         try:
                             audio_recorder.record_from_stream(stream, self.temp_command_file, max_duration=4.0, silence_timeout=1.0)
+                            confirm_text = self.stt.transcribe(self.temp_command_file)
+                            print(f"\033[1;36mTranscribed Confirmation: \"{confirm_text}\"\033[0m")
+                            
+                            norm_confirm = confirm_text.lower().strip().replace(".", "").replace(",", "")
+                            affirmative = ["yes", "yep", "proceed", "okay", "sure", "do it", "agree"]
+                            if any(word in norm_confirm for word in affirmative):
+                                print("\033[1;32m[Voice Confirmation Passed: Executing tool.]\033[0m")
+                                result = tool_router.execute_tool(tool_name, tool_args)
+                                self._log_audit(command_text, score, tool_name, tool_args, f"User confirmed. Result: {result}")
+                            else:
+                                print("\033[1;31m[Voice Confirmation Failed: Action aborted.]\033[0m")
+                                result = f"Error: Action '{tool_name}' cancelled by user."
+                                self._log_audit(command_text, score, tool_name, tool_args, "Aborted: User said no/aborted confirmation")
                         except Exception as rec_err:
                             print(f"Error capturing confirmation: {rec_err}")
                             result = "Error: Failed to capture voice confirmation."
-                            is_destructive = False
                         finally:
                             self.close_stream(stream)
                             stream = None
+                            self._cleanup_temp_file()
                             
-                        if is_destructive:
-                            print("\033[1;33m[Running Speaker Verification Gate for confirmation...]\033[0m")
+                    elif perm_level == "dangerous":
+                        warn_text = f"Warning: Tool '{tool_name}' is dangerous. Confirm your identity to proceed."
+                        print(f"\033[1;31m[Security Gate: '{tool_name}' is dangerous and requires voice biometric verification!]\033[0m")
+                        print(f"\033[1;35mJarvis: {warn_text} (Say Yes or No)\033[0m")
+                        self.set_status("speaking")
+                        self.speak_and_release(warn_text)
+                        
+                        self.set_status("listening")
+                        stream = self.create_stream()
+                        try:
+                            audio_recorder.record_from_stream(stream, self.temp_command_file, max_duration=4.0, silence_timeout=1.0)
+                            
+                            # Perform full speaker verification on the confirmation audio
+                            print("\033[1;33m[Running Speaker Verification Gate on confirmation...]\033[0m")
                             v_threshold = self.config_manager.get("VERIFICATION_THRESHOLD", 0.35)
                             self.verifier.threshold = v_threshold
                             is_verified_confirm, score_confirm = self.verifier.verify_audio(self.temp_command_file)
@@ -391,23 +425,24 @@ class JarvisCore:
                                 norm_confirm = confirm_text.lower().strip().replace(".", "").replace(",", "")
                                 affirmative = ["yes", "yep", "proceed", "okay", "sure", "do it", "agree"]
                                 if any(word in norm_confirm for word in affirmative):
-                                    print("\033[1;32m[Spoken Confirmation Passed: Proceeding with action.]\033[0m")
+                                    print("\033[1;32m[Biometric Confirmation Passed: Executing dangerous tool.]\033[0m")
                                     result = tool_router.execute_tool(tool_name, tool_args)
                                     self._log_audit(command_text, score, tool_name, tool_args, f"Confirmed and executed. Result: {result}")
                                 else:
-                                    print("\033[1;31m[Spoken Confirmation Failed: Action aborted by user.]\033[0m")
-                                    result = "Error: Action cancelled by user."
+                                    print("\033[1;31m[Biometric Confirmation Failed: User cancelled action.]\033[0m")
+                                    result = f"Error: Dangerous action '{tool_name}' cancelled by user."
                                     self._log_audit(command_text, score, tool_name, tool_args, "Aborted: Cancelled by user during spoken confirmation")
                             else:
                                 print("\033[1;31m[Access Denied: Speaker verification failed for confirmation. Action aborted!]\033[0m")
-                                result = "Error: Speaker verification failed during confirmation. Action aborted."
+                                result = f"Error: Speaker verification failed for dangerous action '{tool_name}'."
                                 self._log_audit(command_text, score, tool_name, tool_args, f"Aborted: Speaker verification failed on confirmation (Gate Score: {score_confirm:.4f})")
-                                
+                        except Exception as rec_err:
+                            print(f"Error capturing confirmation: {rec_err}")
+                            result = "Error: Failed to capture voice confirmation."
+                        finally:
+                            self.close_stream(stream)
+                            stream = None
                             self._cleanup_temp_file()
-                    else:
-                        # Run safe tools immediately
-                        result = tool_router.execute_tool(tool_name, tool_args)
-                        self._log_audit(command_text, score, tool_name, tool_args, result)
                         
                     self.event_bus.publish("TOOL_COMPLETED", {"tool_name": tool_name, "outcome": result})
                     
