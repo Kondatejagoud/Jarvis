@@ -18,6 +18,8 @@
     "open_app": "safe",
     "read_file": "safe",
     "git_status": "safe",
-    "create_file": "moderate"
+    "create_file": "moderate",
+    "run_command": "dangerous",
+    "delete_file": "dangerous"
   }
 }

@@ -32,3 +32,34 @@ def open_app(app_name: str) -> str:
             return f"Failed to launch application {app_name}: {e}"
             
     return f"Access Denied: Application '{app_name}' is not in the allowlist."
+
+def run_command(command: str) -> str:
+    """
+    Executes a shell command on the host machine inside the active workspace directory.
+    Returns exit code, stdout, and stderr output.
+    """
+    cleaned_cmd = command.strip()
+    if not cleaned_cmd:
+        return "Error: Command cannot be empty."
+        
+    try:
+        # Run command using subprocess with shell=True for Windows CLI routing
+        result = subprocess.run(
+            cleaned_cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30.0
+        )
+        
+        output = f"Exit Code: {result.returncode}\n"
+        if result.stdout:
+            output += f"Stdout:\n{result.stdout}\n"
+        if result.stderr:
+            output += f"Stderr:\n{result.stderr}\n"
+            
+        return output
+    except subprocess.TimeoutExpired:
+        return "Error: Command execution timed out (limit: 30 seconds)."
+    except Exception as e:
+        return f"Failed to execute command: {e}"

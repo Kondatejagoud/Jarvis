@@ -55,3 +55,27 @@ def create_file(file_path: str, content: str) -> str:
         return f"File successfully created/written at: '{file_path}'"
     except Exception as e:
         return f"Failed to create/write file: {e}"
+
+def delete_file(file_path: str) -> str:
+    """
+    Safely deletes a local file in the workspace directory.
+    Validates path to prevent directory traversal.
+    """
+    try:
+        normalized_path = validate_path(file_path)
+    except PermissionError as pe:
+        return str(pe)
+    except Exception as e:
+        return f"Error resolving path: {e}"
+        
+    if not os.path.exists(normalized_path):
+        return f"Error: File does not exist at path: '{file_path}'"
+        
+    if not os.path.isfile(normalized_path):
+        return f"Error: Path is a directory, not a file: '{file_path}'"
+        
+    try:
+        os.remove(normalized_path)
+        return f"File successfully deleted at: '{file_path}'"
+    except Exception as e:
+        return f"Failed to delete file: {e}"

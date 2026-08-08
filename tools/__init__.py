@@ -1,6 +1,6 @@
-from tools.system_tools import open_app
+from tools.system_tools import open_app, run_command
 from tools.web_tools import web_search
-from tools.file_tools import read_file, create_file
+from tools.file_tools import read_file, create_file, delete_file
 from tools.dev_tools import git_status
 from tools.memory_tools import store_memory, retrieve_memories, delete_memory, set_context
 
@@ -14,7 +14,9 @@ TOOL_FUNCTIONS = {
     "store_memory": store_memory,
     "retrieve_memories": retrieve_memories,
     "delete_memory": delete_memory,
-    "set_context": set_context
+    "set_context": set_context,
+    "run_command": run_command,
+    "delete_file": delete_file
 }
 
 # OpenAI-compatible / Ollama tool schema declarations
@@ -194,6 +196,40 @@ tool_schemas = [
                         "description": "Any blockers stopping progress."
                     }
                 }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_command",
+            "description": "Executes a shell command on the local machine inside the active workspace directory. Returns stdout/stderr.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The exact shell command line string to run."
+                    }
+                },
+                "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_file",
+            "description": "Safely deletes a text or configuration file within the workspace folder. Cannot traverse outside workspace.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "The absolute or relative path to the file to delete."
+                    }
+                },
+                "required": ["file_path"]
             }
         }
     }
