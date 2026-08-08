@@ -1,0 +1,22 @@
+# Python byte cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Temp audio captures
+*.wav
+temp_enrollment_audio/
+
+# Security and Biometrics (Private data)
+speaker_embedding.enc
+audit_log.enc
+.env
+
+# Large pre-trained SpeechBrain/Whisper models
+pretrained_models/
+.locks

@@ -1,0 +1,8 @@
+sounddevice
+soundfile
+keyring
+speechbrain
+cryptography
+numpy
+pvporcupine
+faster-whisper

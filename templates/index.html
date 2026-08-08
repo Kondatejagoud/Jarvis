@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS Voice Control Center</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #080710;
+            --surface-color: rgba(255, 255, 255, 0.06);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --accent-primary: #7d5fff; /* Neon Purple */
+            --accent-secondary: #00e676; /* Neon Green */
+            --accent-tertiary: #29b6f6; /* Blue for Listening */
+            --text-primary: #ffffff;
+            --text-secondary: #b0b0b5;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(125, 95, 255, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(41, 182, 246, 0.08) 0%, transparent 40%);
+        }
+
+        /* Header block */
+        header {
+            padding: 24px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            backdrop-filter: blur(12px);
+            background: rgba(8, 7, 16, 0.6);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-text {
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 24px;
+            letter-spacing: 2px;
+            background: linear-gradient(to right, var(--accent-primary), var(--accent-tertiary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.04);
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #f44336; /* Default Red (Inactive) */
+            box-shadow: 0 0 10px #f44336;
+            transition: all 0.3s ease;
+        }
+
+        .status-dot.active {
+            background-color: var(--accent-secondary);
+            box-shadow: 0 0 10px var(--accent-secondary);
+        }
+
+        /* Container & Layout */
+        .container {
+            max-width: 1300px;
+            margin: 40px auto;
+            padding: 0 24px;
+            display: grid;
+            grid-template-columns: 1.2fr 1.8fr;
+            gap: 32px;
+            flex-grow: 1;
+        }
+
+        @media (max-width: 900px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Cards / Panels */
+        .glass-panel {
+            background: var(--surface-color);
+            backdrop-filter: blur(16px);
+            border-radius: 24px;
+            border: 1px solid var(--border-color);
+            padding: 32px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            transition: transform 0.3s ease, border-color 0.3s ease;
+        }
+
+        .glass-panel:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        /* Center Orb Panel */
+        .control-panel {
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            position: relative;
+            min-height: 480px;
+        }
+
+        .glowing-core-wrapper {
+            position: relative;
+            width: 220px;
+            height: 220px;
+            margin-bottom: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .outer-glow {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 2px dashed rgba(125, 95, 255, 0.2);
+            animation: spin 30s linear infinite;
+        }
+
+        .pulse-ring {
+            position: absolute;
+            width: 80%;
+            height: 80%;
+            border-radius: 50%;
+            border: 1px solid rgba(41, 182, 246, 0.3);
+            animation: pulse-animation 2.5s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+        }
+
+        .glowing-core {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(125,95,255,1) 0%, rgba(125,95,255,0.4) 60%, rgba(125,95,255,0) 100%);
+            box-shadow: 0 0 40px rgba(125, 95, 255, 0.5);
+            transition: all 0.5s ease;
+            z-index: 5;
+        }
+
+        /* Active Core States */
+        .glowing-core.idle {
+            background: radial-gradient(circle, #ffb300 0%, rgba(255,179,0,0.3) 60%, rgba(255,179,0,0) 100%);
+            box-shadow: 0 0 40px rgba(255, 179, 0, 0.4);
+            animation: slow-breath 3s ease-in-out infinite;
+        }
+
+        .glowing-core.listening {
+            background: radial-gradient(circle, var(--accent-tertiary) 0%, rgba(41,182,246,0.3) 60%, rgba(41,182,246,0) 100%);
+            box-shadow: 0 0 50px var(--accent-tertiary);
+            animation: fast-breath 1.2s ease-in-out infinite;
+        }
+
+        .glowing-core.thinking {
+            background: radial-gradient(circle, var(--accent-secondary) 0%, rgba(0,230,118,0.3) 60%, rgba(0,230,118,0) 100%);
+            box-shadow: 0 0 60px var(--accent-secondary);
+            animation: spin 3s linear infinite;
+        }
+
+        .glowing-core.speaking {
+            background: radial-gradient(circle, var(--accent-primary) 0%, rgba(125,95,255,0.3) 60%, rgba(125,95,255,0) 100%);
+            box-shadow: 0 0 60px var(--accent-primary);
+            animation: speaking-animation 0.8s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes pulse-animation {
+            0% { transform: scale(1); opacity: 0.8; }
+            100% { transform: scale(1.4); opacity: 0; }
+        }
+
+        @keyframes slow-breath {
+            0%, 100% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.08); opacity: 1; }
+        }
+
+        @keyframes fast-breath {
+            0%, 100% { transform: scale(1); opacity: 0.7; }
+            50% { transform: scale(1.15); opacity: 1; }
+        }
+
+        @keyframes speaking-animation {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 40px rgba(125, 95, 255, 0.4); }
+            50% { transform: scale(1.12); box-shadow: 0 0 70px rgba(125, 95, 255, 0.7); }
+        }
+
+        .toggle-btn {
+            background: linear-gradient(135deg, var(--accent-primary) 0%, #5b36ff 100%);
+            color: #ffffff;
+            border: none;
+            padding: 16px 40px;
+            border-radius: 30px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 8px 24px rgba(125, 95, 255, 0.3);
+            transition: all 0.3s ease;
+            width: 80%;
+            margin-bottom: 20px;
+        }
+
+        .toggle-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(125, 95, 255, 0.5);
+        }
+
+        .toggle-btn.active {
+            background: #e53935;
+            box-shadow: 0 8px 24px rgba(229, 57, 53, 0.3);
+        }
+
+        .toggle-btn.active:hover {
+            box-shadow: 0 12px 30px rgba(229, 57, 53, 0.5);
+        }
+
+        .sub-message {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-top: 10px;
+        }
+
+        /* Keyboard Command Panel */
+        .command-input-container {
+            width: 100%;
+            margin-top: 24px;
+            display: flex;
+            gap: 12px;
+        }
+
+        .text-input {
+            flex-grow: 1;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--border-color);
+            padding: 14px 20px;
+            border-radius: 12px;
+            color: white;
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+
+        .text-input:focus {
+            border-color: var(--accent-primary);
+        }
+
+        .send-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--border-color);
+            color: white;
+            padding: 0 20px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s ease;
+        }
+
+        .send-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        /* Settings Card */
+        .settings-panel {
+            margin-top: 24px;
+            padding: 24px;
+            border-radius: 16px;
+            background: rgba(0, 0, 0, 0.15);
+            border: 1px solid rgba(255,255,255,0.05);
+            width: 100%;
+            text-align: left;
+        }
+
+        .settings-title {
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+        }
+
+        .settings-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .settings-row label {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        /* Logs / View Logs Panel */
+        .logs-panel {
+            max-height: 700px;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .panel-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .refresh-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 6px 14px;
+            border-radius: 12px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .refresh-btn:hover {
+            color: white;
+            border-color: white;
+        }
+
+        .table-container {
+            overflow-y: auto;
+            flex-grow: 1;
+            border-radius: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border-color);
+        }
+
+        /* Custom Scrollbar */
+        .table-container::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .table-container::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .table-container::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+            text-align: left;
+        }
+
+        th {
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--text-secondary);
+            font-weight: 600;
+            padding: 16px;
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        td {
+            padding: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            vertical-align: top;
+            max-width: 250px;
+            word-wrap: break-word;
+        }
+
+        tr:hover {
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        .verified-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 700;
+            background: rgba(0, 230, 118, 0.15);
+            color: var(--accent-secondary);
+        }
+
+        .denied-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 700;
+            background: rgba(244, 67, 54, 0.15);
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo-section">
+            <span class="logo-text">JARVIS</span>
+            <div class="status-badge">
+                <span class="status-dot" id="headerStatusDot"></span>
+                <span id="headerStatusText">Offline</span>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        
+        <!-- Left Column: Controls -->
+        <div class="glass-panel control-panel">
+            <div class="glowing-core-wrapper">
+                <div class="outer-glow"></div>
+                <div class="pulse-ring"></div>
+                <div class="glowing-core idle" id="assistantCore"></div>
+            </div>
+
+            <button class="toggle-btn" id="toggleBtn" onclick="toggleAssistant()">Activate Jarvis</button>
+            <div class="sub-message" id="instructionMsg">Jarvis is asleep. Click Activate to open your microphone.</div>
+
+            <!-- Keyboard Interaction -->
+            <div class="command-input-container">
+                <input type="text" class="text-input" id="keyboardCommand" placeholder="Type a command to Jarvis..." onkeydown="if(event.key === 'Enter') sendCommand()">
+                <button class="send-btn" onclick="sendCommand()">Send</button>
+            </div>
+
+            <!-- Settings Panel -->
+            <div class="settings-panel">
+                <div class="settings-title">System Settings</div>
+                <div class="settings-row">
+                    <label for="geminiKeyInput">Gemini API Key (loaded from environment)</label>
+                    <input type="password" class="text-input" id="geminiKeyInput" placeholder="AIzaSy... (API Key)" onchange="updateApiKey()">
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Audit Logs -->
+        <div class="glass-panel logs-panel">
+            <div class="panel-header">
+                <h2 class="panel-title">Secure Audit Log (AES-256 decrypted)</h2>
+                <button class="refresh-btn" onclick="fetchLogs()">Refresh</button>
+            </div>
+            
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Command</th>
+                            <th>Identity Score</th>
+                            <th>Security</th>
+                            <th>Outcome</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logsBody">
+                        <tr>
+                            <td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 40px;">
+                                No logs found. Start Jarvis and run commands to generate logs.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        let assistantActive = false;
+        let pollingInterval = null;
+
+        // On Page Load
+        window.onload = () => {
+            checkStatus();
+            fetchLogs();
+            // Poll status every second
+            pollingInterval = setInterval(checkStatus, 1000);
+        };
+
+        function checkStatus() {
+            fetch('/api/status')
+                .then(res => res.json())
+                .then(data => {
+                    const toggleBtn = document.getElementById('toggleBtn');
+                    const assistantCore = document.getElementById('assistantCore');
+                    const headerStatusDot = document.getElementById('headerStatusDot');
+                    const headerStatusText = document.getElementById('headerStatusText');
+                    const instructionMsg = document.getElementById('instructionMsg');
+
+                    assistantActive = data.active;
+                    
+                    // Update key input with value from server if not focused
+                    const keyInput = document.getElementById('geminiKeyInput');
+                    if (document.activeElement !== keyInput && data.api_key_loaded) {
+                        keyInput.value = "••••••••••••••••••••••••••••";
+                    }
+
+                    // Update UI state based on backend state
+                    if (data.active) {
+                        toggleBtn.innerText = "Deactivate Jarvis";
+                        toggleBtn.classList.add('active');
+                        headerStatusDot.classList.add('active');
+                        headerStatusText.innerText = "Active";
+
+                        // Update Orb glow animations based on sub-state
+                        assistantCore.className = "glowing-core " + data.status; // idle, listening, thinking, speaking
+
+                        if (data.status === 'idle') {
+                            instructionMsg.innerText = 'Jarvis is idle. Say "Hey Jarvis" to start!';
+                        } else if (data.status === 'listening') {
+                            instructionMsg.innerText = 'Listening to your command...';
+                        } else if (data.status === 'thinking') {
+                            instructionMsg.innerText = 'Analyzing voice command and checking security...';
+                        } else if (data.status === 'speaking') {
+                            instructionMsg.innerText = 'Executing and speaking response...';
+                        }
+                    } else {
+                        toggleBtn.innerText = "Activate Jarvis";
+                        toggleBtn.classList.remove('active');
+                        headerStatusDot.classList.remove('active');
+                        headerStatusText.innerText = "Offline";
+                        assistantCore.className = "glowing-core idle";
+                        instructionMsg.innerText = "Jarvis is asleep. Click Activate to open your microphone.";
+                    }
+                })
+                .catch(err => console.error("Error checking status:", err));
+        }
+
+        function toggleAssistant() {
+            fetch('/api/toggle', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    checkStatus();
+                    setTimeout(fetchLogs, 1000); // Reload logs after a quick delay
+                });
+        }
+
+        function sendCommand() {
+            const input = document.getElementById('keyboardCommand');
+            const cmd = input.value.trim();
+            if (!cmd) return;
+
+            input.value = '';
+            
+            fetch('/api/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: cmd })
+            })
+            .then(res => res.json())
+            .then(data => {
+                setTimeout(fetchLogs, 1000);
+            })
+            .catch(err => console.error("Error sending keyboard command:", err));
+        }
+
+        function updateApiKey() {
+            const keyInput = document.getElementById('geminiKeyInput');
+            const keyVal = keyInput.value.trim();
+            if (!keyVal || keyVal.includes("••")) return; // Don't upload mask
+
+            fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ gemini_key: keyVal })
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert("Gemini API Key updated successfully!");
+                checkStatus();
+            })
+            .catch(err => console.error("Error saving key:", err));
+        }
+
+        function fetchLogs() {
+            fetch('/api/logs')
+                .then(res => res.json())
+                .then(data => {
+                    const logsBody = document.getElementById('logsBody');
+                    if (data.length === 0) {
+                        logsBody.innerHTML = `
+                            <tr>
+                                <td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 40px;">
+                                    No logs found. Start Jarvis and run commands to generate logs.
+                                </td>
+                            </tr>`;
+                        return;
+                    }
+
+                    logsBody.innerHTML = data.map(log => {
+                        const verifiedClass = log.is_verified ? 'verified-badge' : 'denied-badge';
+                        const verifiedText = log.is_verified ? 'VERIFIED' : 'REJECTED';
+                        
+                        return `
+                            <tr>
+                                <td style="color: var(--text-secondary);">${log.timestamp}</td>
+                                <td style="font-weight: 600;">${log.command || '[Voice Check Only]'}</td>
+                                <td style="font-family: 'Space Grotesk', sans-serif;">${log.gate_score ? log.gate_score.toFixed(4) : 'N/A'}</td>
+                                <td><span class="${verifiedClass}">${verifiedText}</span></td>
+                                <td style="color: var(--text-secondary); max-width: 300px; font-size: 13px;">${log.outcome || ''}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                })
+                .catch(err => console.error("Error fetching logs:", err));
+        }
+    </script>
+</body>
+</html>
