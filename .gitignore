@@ -20,3 +20,6 @@ audit_log.enc
 # Large pre-trained SpeechBrain/Whisper models
 pretrained_models/
 .locks
+
+# Local SQLite databases
+*.db

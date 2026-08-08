@@ -140,7 +140,8 @@ def record_from_stream(stream, output_path, max_duration=10.0, silence_timeout=1
         if elapsed >= max_duration:
             break
             
-    sys.stdout.write("\r[Jarvis: Listening...] Finished!                     \n")
+    # Clear the listening status line from console
+    sys.stdout.write("\r" + " " * 50 + "\r")
     sys.stdout.flush()
     
     # Concatenate all recorded blocks

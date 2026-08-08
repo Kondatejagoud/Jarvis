@@ -1,0 +1,23 @@
+{
+  "WAKE_WORD_MODEL": "hey_jarvis",
+  "WAKE_WORD_THRESHOLD": 0.25,
+  "VERIFICATION_THRESHOLD": 0.35,
+  "OLLAMA_HOST": "http://localhost:11434",
+  "OLLAMA_MODEL": "qwen2.5:3b",
+  "VAD_THRESHOLD": 0.005,
+  "TIMEOUTS": {
+    "silence": 1.5,
+    "llm": 60.0
+  },
+  "FEATURE_FLAGS": {
+    "enable_voice": true,
+    "force_offline": false
+  },
+  "TOOL_PERMISSIONS": {
+    "web_search": "safe",
+    "open_app": "safe",
+    "read_file": "safe",
+    "git_status": "safe",
+    "create_file": "moderate"
+  }
+}
