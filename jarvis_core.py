@@ -20,6 +20,7 @@ from wake_word import WakeWordDetector
 import audio_recorder
 from datetime import datetime
 from memory_manager import MemoryManager
+from verify_tools_outcome import verify_action_outcome
 
 class JarvisCore:
     """
@@ -54,6 +55,122 @@ class JarvisCore:
     def _on_status_change(self, event_type: str, data: dict) -> None:
         if data and "status" in data:
             self.status = data["status"]
+
+    def _resolve_and_execute_tool(self, tool_call, command_text, score) -> str:
+        """
+        Determines permission levels, requests voice confirmation/verification
+        if required, executes the tool, runs output verification, and returns the result.
+        """
+        tool_name = tool_call["function"]["name"]
+        tool_args = tool_call["function"]["arguments"]
+        
+        self.event_bus.publish("TOOL_STARTED", {"tool_name": tool_name, "args": tool_args})
+        
+        # Determine permission level
+        perm_level = self.config_manager.get("TOOL_PERMISSIONS", {}).get(tool_name, "safe")
+        
+        # Contextual promotion to dangerous for file overwriting
+        if tool_name == "create_file":
+            if isinstance(tool_args, str):
+                try:
+                    args = json.loads(tool_args)
+                except:
+                    args = {}
+            else:
+                args = tool_args
+            file_path = args.get("file_path", "")
+            if file_path and os.path.exists(file_path):
+                perm_level = "dangerous"  # Overwriting is dangerous!
+                
+        if perm_level == "safe":
+            result = tool_router.execute_tool(tool_name, tool_args)
+            self._log_audit(command_text, score, tool_name, tool_args, result)
+            
+        elif perm_level == "moderate":
+            warn_text = f"Tool '{tool_name}' requires authorization. Do you want to proceed?"
+            print(f"\033[1;33m[Authorization Check: '{tool_name}' needs confirmation]\033[0m")
+            print(f"\033[1;35mJarvis: {warn_text} (Say Yes or No)\033[0m")
+            self.set_status("speaking")
+            self.speak_and_release(warn_text)
+            
+            self.set_status("listening")
+            stream = self.create_stream()
+            try:
+                audio_recorder.record_from_stream(stream, self.temp_command_file, max_duration=4.0, silence_timeout=1.0)
+                confirm_text = self.stt.transcribe(self.temp_command_file)
+                print(f"\033[1;36mTranscribed Confirmation: \"{confirm_text}\"\033[0m")
+                
+                norm_confirm = confirm_text.lower().strip().replace(".", "").replace(",", "")
+                affirmative = ["yes", "yep", "proceed", "okay", "sure", "do it", "agree"]
+                if any(word in norm_confirm for word in affirmative):
+                    print("\033[1;32m[Voice Confirmation Passed: Executing tool.]\033[0m")
+                    result = tool_router.execute_tool(tool_name, tool_args)
+                    self._log_audit(command_text, score, tool_name, tool_args, f"User confirmed. Result: {result}")
+                else:
+                    print("\033[1;31m[Voice Confirmation Failed: Action aborted.]\033[0m")
+                    result = f"Error: Action '{tool_name}' cancelled by user."
+                    self._log_audit(command_text, score, tool_name, tool_args, "Aborted: User said no/aborted confirmation")
+            except Exception as rec_err:
+                print(f"Error capturing confirmation: {rec_err}")
+                result = "Error: Failed to capture voice confirmation."
+            finally:
+                self.close_stream(stream)
+                stream = None
+                self._cleanup_temp_file()
+                
+        elif perm_level == "dangerous":
+            warn_text = f"Warning: Tool '{tool_name}' is dangerous. Confirm your identity to proceed."
+            print(f"\033[1;31m[Security Gate: '{tool_name}' is dangerous and requires voice biometric verification!]\033[0m")
+            print(f"\033[1;35mJarvis: {warn_text} (Say Yes or No)\033[0m")
+            self.set_status("speaking")
+            self.speak_and_release(warn_text)
+            
+            self.set_status("listening")
+            stream = self.create_stream()
+            try:
+                audio_recorder.record_from_stream(stream, self.temp_command_file, max_duration=4.0, silence_timeout=1.0)
+                
+                # Perform full speaker verification on the confirmation audio
+                print("\033[1;33m[Running Speaker Verification Gate on confirmation...]\033[0m")
+                v_threshold = self.config_manager.get("VERIFICATION_THRESHOLD", 0.35)
+                self.verifier.threshold = v_threshold
+                is_verified_confirm, score_confirm = self.verifier.verify_audio(self.temp_command_file)
+                print(f"Confirm Gate Score: {score_confirm:.4f} (Threshold: {v_threshold:.2f})")
+                
+                if is_verified_confirm:
+                    confirm_text = self.stt.transcribe(self.temp_command_file)
+                    print(f"\033[1;36mTranscribed Confirmation: \"{confirm_text}\"\033[0m")
+                    
+                    norm_confirm = confirm_text.lower().strip().replace(".", "").replace(",", "")
+                    affirmative = ["yes", "yep", "proceed", "okay", "sure", "do it", "agree"]
+                    if any(word in norm_confirm for word in affirmative):
+                        print("\033[1;32m[Biometric Confirmation Passed: Executing dangerous tool.]\033[0m")
+                        result = tool_router.execute_tool(tool_name, tool_args)
+                        self._log_audit(command_text, score, tool_name, tool_args, f"Confirmed and executed. Result: {result}")
+                    else:
+                        print("\033[1;31m[Biometric Confirmation Failed: User cancelled action.]\033[0m")
+                        result = f"Error: Dangerous action '{tool_name}' cancelled by user."
+                        self._log_audit(command_text, score, tool_name, tool_args, "Aborted: Cancelled by user during spoken confirmation")
+                else:
+                    print("\033[1;31m[Access Denied: Speaker verification failed for confirmation. Action aborted!]\033[0m")
+                    result = f"Error: Speaker verification failed for dangerous action '{tool_name}'."
+                    self._log_audit(command_text, score, tool_name, tool_args, f"Aborted: Speaker verification failed on confirmation (Gate Score: {score_confirm:.4f})")
+            except Exception as rec_err:
+                print(f"Error capturing confirmation: {rec_err}")
+                result = "Error: Failed to capture voice confirmation."
+            finally:
+                self.close_stream(stream)
+                stream = None
+                self._cleanup_temp_file()
+                
+        # Run Output Verification
+        is_ok, verified_result = verify_action_outcome(tool_name, tool_args, result)
+        if not is_ok:
+            print(f"\033[1;31m[Output Verification Failed: {verified_result}]\033[0m")
+        result = verified_result
+
+        self.event_bus.publish("TOOL_COMPLETED", {"tool_name": tool_name, "outcome": result})
+        return result
 
     def set_status(self, new_status: str) -> None:
         """Publishes status updates across the Event Bus."""
@@ -343,108 +460,7 @@ class JarvisCore:
                 
                 for tool_call in message["tool_calls"]:
                     tool_name = tool_call["function"]["name"]
-                    tool_args = tool_call["function"]["arguments"]
-                    
-                    self.event_bus.publish("TOOL_STARTED", {"tool_name": tool_name, "args": tool_args})
-                    
-                    # Determine permission level
-                    perm_level = self.config_manager.get("TOOL_PERMISSIONS", {}).get(tool_name, "safe")
-                    
-                    # Contextual promotion to dangerous for file overwriting
-                    if tool_name == "create_file":
-                        if isinstance(tool_args, str):
-                            try:
-                                args = json.loads(tool_args)
-                            except:
-                                args = {}
-                        else:
-                            args = tool_args
-                        file_path = args.get("file_path", "")
-                        if file_path and os.path.exists(file_path):
-                            perm_level = "dangerous"  # Overwriting is dangerous!
-                            
-                    if perm_level == "safe":
-                        result = tool_router.execute_tool(tool_name, tool_args)
-                        self._log_audit(command_text, score, tool_name, tool_args, result)
-                        
-                    elif perm_level == "moderate":
-                        warn_text = f"Tool '{tool_name}' requires authorization. Do you want to proceed?"
-                        print(f"\033[1;33m[Authorization Check: '{tool_name}' needs confirmation]\033[0m")
-                        print(f"\033[1;35mJarvis: {warn_text} (Say Yes or No)\033[0m")
-                        self.set_status("speaking")
-                        self.speak_and_release(warn_text)
-                        
-                        self.set_status("listening")
-                        stream = self.create_stream()
-                        try:
-                            audio_recorder.record_from_stream(stream, self.temp_command_file, max_duration=4.0, silence_timeout=1.0)
-                            confirm_text = self.stt.transcribe(self.temp_command_file)
-                            print(f"\033[1;36mTranscribed Confirmation: \"{confirm_text}\"\033[0m")
-                            
-                            norm_confirm = confirm_text.lower().strip().replace(".", "").replace(",", "")
-                            affirmative = ["yes", "yep", "proceed", "okay", "sure", "do it", "agree"]
-                            if any(word in norm_confirm for word in affirmative):
-                                print("\033[1;32m[Voice Confirmation Passed: Executing tool.]\033[0m")
-                                result = tool_router.execute_tool(tool_name, tool_args)
-                                self._log_audit(command_text, score, tool_name, tool_args, f"User confirmed. Result: {result}")
-                            else:
-                                print("\033[1;31m[Voice Confirmation Failed: Action aborted.]\033[0m")
-                                result = f"Error: Action '{tool_name}' cancelled by user."
-                                self._log_audit(command_text, score, tool_name, tool_args, "Aborted: User said no/aborted confirmation")
-                        except Exception as rec_err:
-                            print(f"Error capturing confirmation: {rec_err}")
-                            result = "Error: Failed to capture voice confirmation."
-                        finally:
-                            self.close_stream(stream)
-                            stream = None
-                            self._cleanup_temp_file()
-                            
-                    elif perm_level == "dangerous":
-                        warn_text = f"Warning: Tool '{tool_name}' is dangerous. Confirm your identity to proceed."
-                        print(f"\033[1;31m[Security Gate: '{tool_name}' is dangerous and requires voice biometric verification!]\033[0m")
-                        print(f"\033[1;35mJarvis: {warn_text} (Say Yes or No)\033[0m")
-                        self.set_status("speaking")
-                        self.speak_and_release(warn_text)
-                        
-                        self.set_status("listening")
-                        stream = self.create_stream()
-                        try:
-                            audio_recorder.record_from_stream(stream, self.temp_command_file, max_duration=4.0, silence_timeout=1.0)
-                            
-                            # Perform full speaker verification on the confirmation audio
-                            print("\033[1;33m[Running Speaker Verification Gate on confirmation...]\033[0m")
-                            v_threshold = self.config_manager.get("VERIFICATION_THRESHOLD", 0.35)
-                            self.verifier.threshold = v_threshold
-                            is_verified_confirm, score_confirm = self.verifier.verify_audio(self.temp_command_file)
-                            print(f"Confirm Gate Score: {score_confirm:.4f} (Threshold: {v_threshold:.2f})")
-                            
-                            if is_verified_confirm:
-                                confirm_text = self.stt.transcribe(self.temp_command_file)
-                                print(f"\033[1;36mTranscribed Confirmation: \"{confirm_text}\"\033[0m")
-                                
-                                norm_confirm = confirm_text.lower().strip().replace(".", "").replace(",", "")
-                                affirmative = ["yes", "yep", "proceed", "okay", "sure", "do it", "agree"]
-                                if any(word in norm_confirm for word in affirmative):
-                                    print("\033[1;32m[Biometric Confirmation Passed: Executing dangerous tool.]\033[0m")
-                                    result = tool_router.execute_tool(tool_name, tool_args)
-                                    self._log_audit(command_text, score, tool_name, tool_args, f"Confirmed and executed. Result: {result}")
-                                else:
-                                    print("\033[1;31m[Biometric Confirmation Failed: User cancelled action.]\033[0m")
-                                    result = f"Error: Dangerous action '{tool_name}' cancelled by user."
-                                    self._log_audit(command_text, score, tool_name, tool_args, "Aborted: Cancelled by user during spoken confirmation")
-                            else:
-                                print("\033[1;31m[Access Denied: Speaker verification failed for confirmation. Action aborted!]\033[0m")
-                                result = f"Error: Speaker verification failed for dangerous action '{tool_name}'."
-                                self._log_audit(command_text, score, tool_name, tool_args, f"Aborted: Speaker verification failed on confirmation (Gate Score: {score_confirm:.4f})")
-                        except Exception as rec_err:
-                            print(f"Error capturing confirmation: {rec_err}")
-                            result = "Error: Failed to capture voice confirmation."
-                        finally:
-                            self.close_stream(stream)
-                            stream = None
-                            self._cleanup_temp_file()
-                        
-                    self.event_bus.publish("TOOL_COMPLETED", {"tool_name": tool_name, "outcome": result})
+                    result = self._resolve_and_execute_tool(tool_call, command_text, score)
                     
                     messages.append({
                         "role": "tool",
@@ -472,6 +488,105 @@ class JarvisCore:
                     message = resp_json["choices"][0]["message"]
                 else:
                     message = resp_json["message"]
+                    
+            # If a plan was registered, execute it sequentially
+            from tools.planner_tool import active_plan
+            if active_plan.status == "active":
+                plan_msg = f"Drafted a plan with {len(active_plan.steps)} steps. Starting step 1."
+                print(f"\n\033[1;32m[Jarvis: {plan_msg}]\033[0m")
+                self.set_status("speaking")
+                self.speak_and_release(plan_msg)
+                
+                while active_plan.status == "active":
+                    current_step = active_plan.get_current_step()
+                    step_num = active_plan.current_index + 1
+                    print(f"\n\033[1;34m[Planner: Running Step {step_num} of {len(active_plan.steps)}]\033[0m")
+                    print(f"\033[1;30m{current_step}\033[0m")
+                    
+                    # Prompt LLM with the active step
+                    step_prompt = f"Executing plan step: {current_step}. Do not register a new plan, execute the tool calls for this step."
+                    messages.append({
+                        "role": "user",
+                        "content": step_prompt
+                    })
+                    
+                    self.set_status("thinking")
+                    response = httpx.post(
+                        api_url,
+                        headers=headers,
+                        json={
+                            "model": model_name,
+                            "messages": messages,
+                            "tools": tool_schemas,
+                            "stream": False
+                        },
+                        timeout=self.config_manager.get("TIMEOUTS", {}).get("llm", 60.0)
+                    )
+                    response.raise_for_status()
+                    resp_json = response.json()
+                    if "choices" in resp_json:
+                        step_message = resp_json["choices"][0]["message"]
+                    else:
+                        step_message = resp_json["message"]
+                        
+                    step_failed = False
+                    # Keep executing tools returned for this plan step
+                    while "tool_calls" in step_message and step_message["tool_calls"]:
+                        messages.append(step_message)
+                        for t_call in step_message["tool_calls"]:
+                            t_name = t_call["function"]["name"]
+                            t_result = self._resolve_and_execute_tool(t_call, command_text, score)
+                            
+                            # If a step failed output verification or returned error, fail the plan
+                            if "Verification Error" in t_result or "Error:" in t_result or "Access Denied" in t_result:
+                                step_failed = True
+                                
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": t_call.get("id", "call_default"),
+                                "content": t_result,
+                                "name": t_name
+                            })
+                            
+                        self.set_status("thinking")
+                        response = httpx.post(
+                            api_url,
+                            headers=headers,
+                            json={
+                                "model": model_name,
+                                "messages": messages,
+                                "tools": tool_schemas,
+                                "stream": False
+                            },
+                            timeout=self.config_manager.get("TIMEOUTS", {}).get("llm", 60.0)
+                        )
+                        response.raise_for_status()
+                        resp_json = response.json()
+                        if "choices" in resp_json:
+                            step_message = resp_json["choices"][0]["message"]
+                        else:
+                            step_message = resp_json["message"]
+                            
+                    # Append final response text from step
+                    messages.append(step_message)
+                    message = step_message  # Keep message updated for post-loop content checking
+                    
+                    if step_failed:
+                        active_plan.fail()
+                        err_msg = f"Plan execution aborted. Step {step_num} failed verification."
+                        print(f"\033[1;31m[Planner: {err_msg}]\033[0m")
+                        self.set_status("speaking")
+                        self.speak_and_release(err_msg)
+                        break
+                    else:
+                        active_plan.advance()
+                        
+                if active_plan.status == "completed":
+                    done_msg = "All steps of the plan have been executed and verified successfully."
+                    print(f"\033[1;32m[Planner: {done_msg}]\033[0m")
+                    self.set_status("speaking")
+                    self.speak_and_release(done_msg)
+                    active_plan.reset()
                     
             if message.get("content"):
                 reply_text = message['content']

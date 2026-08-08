@@ -1,5 +1,6 @@
 import subprocess
 import webbrowser
+from security_utils import validate_path
 
 # Map allowlisted applications to local executables or launch functions
 APP_MAP = {
@@ -9,10 +10,10 @@ APP_MAP = {
     "paint": ["mspaint.exe"]
 }
 
-def open_app(app_name: str) -> str:
+def open_app(app_name: str, file_path: str = None) -> str:
     """
     Safely opens a pre-approved system application.
-    Does not execute raw shell commands.
+    Optionally opens a specific file with the application (guarded by path validation).
     """
     app_key = app_name.strip().lower()
     
@@ -25,8 +26,21 @@ def open_app(app_name: str) -> str:
             
     if app_key in APP_MAP:
         try:
+            cmd = list(APP_MAP[app_key])
+            if file_path:
+                try:
+                    # Validate path to prevent directory traversal
+                    validated_file = validate_path(file_path)
+                    cmd.append(validated_file)
+                except PermissionError as pe:
+                    return str(pe)
+                except Exception as e:
+                    return f"Error validating file path: {e}"
+                    
             # Run the pre-defined command list without shell=True to prevent injection
-            subprocess.Popen(APP_MAP[app_key], shell=False)
+            subprocess.Popen(cmd, shell=False)
+            if file_path:
+                return f"Successfully opened {app_name} with file '{file_path}'."
             return f"Successfully opened {app_name}."
         except Exception as e:
             return f"Failed to launch application {app_name}: {e}"

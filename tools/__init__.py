@@ -3,6 +3,7 @@ from tools.web_tools import web_search
 from tools.file_tools import read_file, create_file, delete_file
 from tools.dev_tools import git_status
 from tools.memory_tools import store_memory, retrieve_memories, delete_memory, set_context
+from tools.planner_tool import register_plan
 
 # Map of tool names to Python implementations
 TOOL_FUNCTIONS = {
@@ -16,7 +17,8 @@ TOOL_FUNCTIONS = {
     "delete_memory": delete_memory,
     "set_context": set_context,
     "run_command": run_command,
-    "delete_file": delete_file
+    "delete_file": delete_file,
+    "register_plan": register_plan
 }
 
 # OpenAI-compatible / Ollama tool schema declarations
@@ -25,13 +27,17 @@ tool_schemas = [
         "type": "function",
         "function": {
             "name": "open_app",
-            "description": "Opens a pre-approved system application on the user's laptop (e.g. calculator, notepad, paint, explorer, browser). Do not call for general shell commands.",
+            "description": "Opens a pre-approved system application on the user's laptop (e.g. calculator, notepad, paint, explorer, browser). Optionally passes a file path to open in it.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "app_name": {
                         "type": "string",
                         "description": "The name of the application to launch (notepad, calculator, explorer, paint, browser)."
+                    },
+                    "file_path": {
+                        "type": "string",
+                        "description": "Optional relative or absolute file path to open with the application."
                     }
                 },
                 "required": ["app_name"]
@@ -230,6 +236,26 @@ tool_schemas = [
                     }
                 },
                 "required": ["file_path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "register_plan",
+            "description": "Registers a sequential, multi-step execution plan for a complex request. Call this ONLY when a task requires multiple dependent step actions in a specific order.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "A list of discrete, sequential action steps to complete the task."
+                    }
+                },
+                "required": ["steps"]
             }
         }
     }
